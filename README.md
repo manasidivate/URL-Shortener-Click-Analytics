@@ -38,7 +38,7 @@ The project is being developed incrementally, with a focus on backend architectu
 - **Background Processing:** RQ
 - **Geolocation:** GeoLite2 Country Database
 - **User-Agent Parsing:** user-agents
-- **Containerization:** Docker
+- **Infrastructure:** Docker (Redis)
 - **Version Control:** Git & GitHub
 
 ## 🏗️ System Architecture
@@ -133,7 +133,6 @@ URL-Shortener-Click-Analytics/
 ├── templates/
 │   └── index.html
 │
-├── .env
 ├── .gitignore
 ├── app.py
 ├── extensions.py
@@ -146,7 +145,7 @@ URL-Shortener-Click-Analytics/
 └── README.md
 ```
 
-> The GeoLite2 database file is required locally for country detection and is excluded from version control.
+
 
 ## 🚀 Running the Project Locally
 
@@ -184,6 +183,12 @@ pip install -r requirements.txt
 ### 4. Configure environment variables
 
 Create a `.env` file with the required PostgreSQL configuration and other environment-specific values used by the application.
+
+### GeoLite2 Country Database
+
+Download the **GeoLite2 Country** database from MaxMind and place the extracted `GeoLite2-Country.mmdb` file inside the `data/` directory.
+
+The database is required for IP-based country detection and is excluded from version control.
 
 ### 5. Start Redis
 
