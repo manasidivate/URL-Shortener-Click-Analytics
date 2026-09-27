@@ -65,7 +65,7 @@ def redirect_url(short_url):
     if cached_url:      
         url = URL.query.filter_by(short_url=short_url).first() 
 
-        if not url: #
+        if not url: 
             return {"error": "Short URL not found"}, 404 
 
         rq_queue.enqueue(   

@@ -2,12 +2,11 @@ from models import ClickEvent
 from extensions import db
 from user_agents import parse
 import geoip2.database
-import hashlib #
-import os      #
-from dotenv import load_dotenv #
+import hashlib 
+import os      
+from dotenv import load_dotenv 
 
-load_dotenv() #
-
+load_dotenv() 
 
 
 def process_click_event(
@@ -21,7 +20,7 @@ def process_click_event(
 
     browser, device_type = get_user_agent_info(user_agent)
 
-    visitor_hash = generate_visitor_hash(ip_address) #
+    visitor_hash = generate_visitor_hash(ip_address) 
 
     click_event = ClickEvent(
         url_id=url_id,
@@ -30,7 +29,7 @@ def process_click_event(
         browser=browser,
         device_type=device_type,
         referrer=referrer,
-        visitor_hash=visitor_hash #
+        visitor_hash=visitor_hash 
     )
 
     try:
@@ -73,8 +72,7 @@ def get_country(ip_address):
 #Testing(in venv terminal): python -c "from tasks import get_country; print(get_country('8.8.8.8'))"
 
 
-#helper function for 3.Generate visitor_hash
-def generate_visitor_hash(ip_address): #
+def generate_visitor_hash(ip_address): 
     salt = os.getenv("VISITOR_HASH_SALT")
 
     if not salt:
@@ -82,7 +80,7 @@ def generate_visitor_hash(ip_address): #
 
     value = f"{salt}:{ip_address}"
 
-    return hashlib.sha256(value.encode()).hexdigest() #
+    return hashlib.sha256(value.encode()).hexdigest() 
 #Testing(in venv terminal): python -c "from tasks import generate_visitor_hash; print(generate_visitor_hash('8.8.8.8'))"
 #Output -> 64-character SHA-256 hash.
 
