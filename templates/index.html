@@ -3,35 +3,282 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>URL Shortener</title>
+
+    <title>URL Shortener + Click Analytics</title>
 
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
 <body>
 
-    <div class="container">
+    <main class="page-shell">
 
-        <h1>URL Shortener</h1>
+        <header class="page-header">
+            <h1>URL Shortener + Click Analytics</h1>
+            <p class="page-subtitle">
+                Shorten URLs and track how they perform.
+            </p>
+        </header>
 
-        <p>Shorten your long URL</p>
 
-        <form id="shorten-form">
+        <!-- CREATE SHORT LINK -->
+        <section class="card create-card" aria-labelledby="create-heading">
 
-            <input
-                type="url"
-                id="original-url"
-                placeholder="Paste your long URL here..."
-                required
+            <div class="section-heading">
+                <h2 id="create-heading">Create a short link</h2>
+                <p>
+                    Enter a long URL to generate a shorter link.
+                </p>
+            </div>
+
+            <form id="shorten-form" novalidate>
+
+                <label for="original-url">Long URL</label>
+
+                <div class="url-input-row">
+                    <input
+                        type="url"
+                        id="original-url"
+                        name="original-url"
+                        placeholder="https://example.com/your-long-url"
+                        autocomplete="url"
+                        required
+                    >
+                </div>
+ 
+                <label for="alias">Custom link name <span>(optional)</span></label>
+                <input
+                    type="text"
+                    id="alias"
+                    name="alias"
+                    placeholder="e.g. my-project"
+                    maxlength="50"
+                />
+
+                <div class="shorten-button-row">
+                    <button
+                        type="submit"
+                        id="shorten-button"
+                        class="button button-primary"
+                    >
+                        <span id="shorten-button-text">Shorten URL</span>
+                    </button>
+                </div>
+
+                <p
+                    id="form-message"
+                    class="message"
+                    role="status"
+                    aria-live="polite"
+                ></p>
+
+            </form>
+
+
+            <!-- SUCCESS -->
+            <div
+                id="success-panel"
+                class="success-panel hidden"
+                aria-labelledby="success-heading"
             >
 
-            <button type="submit">Shorten URL</button>
+                <div class="divider"></div>
 
-        </form>
+                <div class="success-heading">
+                    <h3 id="success-heading">Your short URL</h3>
+                    <p>
+                        Your link is ready to use.
+                    </p>
+                </div>
 
-        <div id="result"></div>
+                <div class="short-url-box">
 
-    </div>
+                    <a
+                        id="short-url"
+                        class="short-url"
+                        href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    ></a>
+
+                    <div class="short-url-actions">
+
+                        <button
+                            type="button"
+                            id="copy-button"
+                            class="button button-secondary"
+                        >
+                            Copy
+                        </button>
+
+                        <a
+                            id="open-button"
+                            class="button button-secondary"
+                            href="#"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            Open
+                        </a>
+
+                        <button
+                            type="button"
+                            id="analytics-button"
+                            class="button button-primary"
+                        >
+                            View Analytics
+                        </button>
+
+                    </div>
+
+                </div>
+
+                <p
+                    id="copy-message"
+                    class="message"
+                    role="status"
+                    aria-live="polite"
+                ></p>
+
+            </div>
+
+        </section>
+
+
+        <!-- ANALYTICS -->
+        <section
+            id="analytics-section"
+            class="analytics-section hidden"
+            aria-labelledby="analytics-heading"
+        >
+
+            <div class="analytics-header">
+
+                <div>
+                    <p class="section-kicker">Link performance</p>
+
+                    <h2 id="analytics-heading">Analytics</h2>
+
+                    <p
+                        id="analytics-url"
+                        class="analytics-url"
+                    ></p>
+                </div>
+
+                <button
+                    type="button"
+                    id="refresh-button"
+                    class="button button-secondary"
+                >
+                    Refresh
+                </button>
+
+            </div>
+
+            <p
+                id="analytics-message"
+                class="message"
+                role="status"
+                aria-live="polite"
+            ></p>
+
+
+            <!-- METRICS -->
+            <div class="metrics-grid">
+
+                <article class="metric-card">
+
+                    <p class="metric-label">Total Clicks</p>
+
+                    <p
+                        id="total-clicks"
+                        class="metric-value"
+                    >
+                        —
+                    </p>
+
+                    <p class="metric-description">
+                        Total recorded clicks
+                    </p>
+
+                </article>
+
+
+                <article class="metric-card">
+
+                    <p class="metric-label">Unique Visitors</p>
+
+                    <p
+                        id="unique-visitors"
+                        class="metric-value"
+                    >
+                        —
+                    </p>
+
+                    <p class="metric-description">
+                        Distinct visitor identifiers
+                    </p>
+
+                </article>
+
+            </div>
+
+
+            <!-- CLICKS OVER TIME -->
+            <article class="card analytics-card timeline-card">
+
+                <div class="card-heading">
+                    <p class="section-kicker">Last 7 days</p>
+                    <h3>Clicks over time</h3>
+                </div>
+
+                <div
+                    id="timeline"
+                    class="timeline"
+                    aria-label="Clicks over the last seven days"
+                ></div>
+
+            </article>
+
+
+            <!-- RANKINGS -->
+            <div class="analytics-grid">
+
+                <article class="card analytics-card">
+
+                    <div class="card-heading">
+                        <p class="section-kicker">Location</p>
+                        <h3>Top countries</h3>
+                    </div>
+
+                    <div
+                        id="countries-list"
+                        class="ranking-list"
+                    ></div>
+
+                </article>
+
+
+                <article class="card analytics-card">
+
+                    <div class="card-heading">
+                        <p class="section-kicker">Sources</p>
+                        <h3>Top referrers</h3>
+                    </div>
+
+                    <div
+                        id="referrers-list"
+                        class="ranking-list"
+                    ></div>
+
+                </article>
+
+            </div>
+
+        </section>
+
+    </main>
+
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 
