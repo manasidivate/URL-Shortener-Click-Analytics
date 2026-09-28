@@ -45,8 +45,12 @@
                         required
                     >
                 </div>
- 
-                <label for="alias">Custom link name <span>(optional)</span></label>
+
+
+                <label for="alias">
+                    Custom link name <span>(optional)</span>
+                </label>
+
                 <input
                     type="text"
                     id="alias"
@@ -54,6 +58,22 @@
                     placeholder="e.g. my-project"
                     maxlength="50"
                 />
+
+
+                <label for="expires-at">
+                    Expiry date and time <span>(optional)</span>
+                </label>
+
+                <input
+                    type="datetime-local"
+                    id="expires-at"
+                    name="expires-at"
+                />
+
+                <p class="field-hint">
+                    Leave empty if you want the short link to never expire.
+                </p>
+
 
                 <div class="shorten-button-row">
                     <button

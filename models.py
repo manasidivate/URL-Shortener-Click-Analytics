@@ -1,11 +1,12 @@
 from extensions import db
 
+
 class URL(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     original_url = db.Column(db.String(2048), nullable=False)
     short_url = db.Column(db.String(50), nullable=False, unique=True)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
-    
     click_events = db.relationship(
         "ClickEvent",
         back_populates="url"

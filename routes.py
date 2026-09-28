@@ -6,9 +6,10 @@ from urllib.parse import urlparse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from extensions import redis_client
 from datetime import datetime, time, timedelta, timezone
-from tasks import process_click_event 
-from extensions import rq_queue 
+from tasks import process_click_event
+from extensions import rq_queue
 import re
+import json
 
 
 url_routes = Blueprint("url_routes", __name__)
@@ -21,13 +22,14 @@ ALIAS_PATTERN = re.compile(r"[a-z0-9_-]{3,50}")
 def home():
     return render_template("index.html")
 
-@url_routes.route("/shorten", methods = ["POST"])
+
+@url_routes.route("/shorten", methods=["POST"])
 def shorten_url():
     data = request.get_json(silent=True)
 
     if data is None:
         return {"error": "Request body must be valid JSON"}, 400
-    
+
     original_url = data.get("original_url")
 
     if not original_url:
@@ -43,30 +45,61 @@ def shorten_url():
 
     if alias_provided:
         if not isinstance(alias, str):
-            return {"error": "Alias must be 3-50 letters, numbers, hyphens, or underscores only"}, 400
+            return {
+                "error": "Alias must be 3-50 letters, numbers, hyphens, or underscores only"
+            }, 400
 
         alias = alias.lower()
 
         if not ALIAS_PATTERN.fullmatch(alias):
-            return {"error": "Alias must be 3-50 letters, numbers, hyphens, or underscores"}, 400
+            return {
+                "error": "Alias must be 3-50 letters, numbers, hyphens, or underscores"
+            }, 400
 
         if alias in RESERVED_ALIASES:
-            return {"error": "Alias is not available. Please choose another one."}, 409
+            return {
+                "error": "Alias is not available. Please choose another one."
+            }, 409
 
-    try: 
+    # FR6: Optional expiry date
+    expires_at = data.get("expires_at")
+
+    if expires_at is not None:
+        if not isinstance(expires_at, str):
+            return {"error": "expires_at must be a valid datetime"}, 400
+
+        try:
+            parsed_expires_at = datetime.fromisoformat(
+                expires_at.replace("Z", "+00:00")
+            )
+        except ValueError:
+            return {"error": "expires_at must be a valid datetime"}, 400
+
+        if parsed_expires_at.tzinfo is None:
+            return {
+                "error": "expires_at must include timezone information"
+            }, 400
+
+        expires_at = parsed_expires_at.astimezone(timezone.utc)
+
+    try:
         if alias_provided:
             if URL.query.filter_by(short_url=alias).first():
-                return {"error": "Alias is not available. Please choose another one."}, 409
+                return {
+                    "error": "Alias is not available. Please choose another one."
+                }, 409
 
             short_url = alias
+
             url = URL(
                 original_url=original_url,
-                short_url=short_url
+                short_url=short_url,
+                expires_at=expires_at
             )
 
         else:
             result = db.session.execute(
-            text("SELECT nextval(pg_get_serial_sequence('url', 'id'))")
+                text("SELECT nextval(pg_get_serial_sequence('url', 'id'))")
             )
 
             next_id = result.scalar()
@@ -76,7 +109,8 @@ def shorten_url():
             url = URL(
                 id=next_id,
                 original_url=original_url,
-                short_url=short_url
+                short_url=short_url,
+                expires_at=expires_at
             )
 
         db.session.add(url)
@@ -86,13 +120,15 @@ def shorten_url():
         db.session.rollback()
 
         if alias_provided:
-            return {"error": "Alias is not available. Please choose another one."}, 409
+            return {
+                "error": "Alias is not available. Please choose another one."
+            }, 409
 
         return {"error": "Database error"}, 500
 
-    except SQLAlchemyError: 
-        db.session.rollback() 
-        return {"error": "Database error"}, 500 
+    except SQLAlchemyError:
+        db.session.rollback()
+        return {"error": "Database error"}, 500
 
     return {"short_url": short_url}, 201
 
@@ -158,11 +194,19 @@ def get_analytics(short_url):
 
         today_utc = datetime.now(timezone.utc).date()
         start_date = today_utc - timedelta(days=6)
-        range_start = datetime.combine(start_date, time.min, tzinfo=timezone.utc)
+
+        range_start = datetime.combine(
+            start_date,
+            time.min,
+            tzinfo=timezone.utc
+        )
+
         range_end = range_start + timedelta(days=7)
 
         if db.engine.dialect.name == "postgresql":
-            click_date = func.date(ClickEvent.timestamp.op("AT TIME ZONE")("UTC"))
+            click_date = func.date(
+                ClickEvent.timestamp.op("AT TIME ZONE")("UTC")
+            )
         else:
             click_date = func.date(ClickEvent.timestamp)
 
@@ -186,12 +230,16 @@ def get_analytics(short_url):
         return {"error": "Database error"}, 500
 
     clicks_by_date = {
-        str(click_date): clicks for click_date, clicks in daily_clicks
+        str(click_date): clicks
+        for click_date, clicks in daily_clicks
     }
+
     clicks_over_time = []
+
     for day_offset in range(7):
         current_date = start_date + timedelta(days=day_offset)
         current_date_string = current_date.isoformat()
+
         clicks_over_time.append(
             {
                 "date": current_date_string,
@@ -214,26 +262,50 @@ def get_analytics(short_url):
     }, 200
 
 
-@url_routes.route("/<short_url>", methods = ["GET"])
+@url_routes.route("/<short_url>", methods=["GET"])
 def redirect_url(short_url):
-    cached_url = redis_client.get(short_url)  
+    cached_url = redis_client.get(short_url)
 
-    if cached_url:      
-        url = URL.query.filter_by(short_url=short_url).first() 
+    if cached_url:
+        try:
+            cached_data = json.loads(cached_url)
 
-        if not url: 
-            return {"error": "Short URL not found"}, 404 
+        except (json.JSONDecodeError, TypeError):
+            # Legacy cache entry from before FR6.
+            # Treat it as a cache miss so the new cache format can be created.
+            redis_client.delete(short_url)
 
-        rq_queue.enqueue(   
-            process_click_event,
-            url.id,
-            datetime.now(timezone.utc),
-            request.remote_addr,
-            request.headers.get("User-Agent"),
-            request.referrer
-        )    
+        else:
+            cached_url_id = cached_data.get("url_id")
+            cached_original_url = cached_data.get("original_url")
+            cached_expires_at = cached_data.get("expires_at")
 
-        return redirect(cached_url)           
+            if not cached_url_id or not cached_original_url:
+                redis_client.delete(short_url)
+
+            else:
+                if cached_expires_at:
+                    cached_expiry = datetime.fromisoformat(
+                        cached_expires_at
+                    )
+
+                    if datetime.now(timezone.utc) >= cached_expiry:
+                        redis_client.delete(short_url)
+
+                        return render_template(
+                            "expired.html"
+                        ), 410
+
+                rq_queue.enqueue(
+                    process_click_event,
+                    cached_url_id,
+                    datetime.now(timezone.utc),
+                    request.remote_addr,
+                    request.headers.get("User-Agent"),
+                    request.referrer
+                )
+
+                return redirect(cached_original_url)
 
     try:
         url = URL.query.filter_by(short_url=short_url).first()
@@ -245,20 +317,49 @@ def redirect_url(short_url):
     if not url:
         return {"error": "Short URL not found"}, 404
 
-    redis_client.set(short_url, url.original_url)  
+    # FR6: Check expiry before creating/using redirect cache.
+    if url.expires_at is not None:
+        current_time = datetime.now(timezone.utc)
 
-    rq_queue.enqueue(   
+        expiry_time = url.expires_at
+
+        if expiry_time.tzinfo is None:
+            expiry_time = expiry_time.replace(tzinfo=timezone.utc)
+
+        if current_time >= expiry_time:
+            redis_client.delete(short_url)
+
+            return render_template(
+                "expired.html"
+            ), 410
+
+    cached_data = {
+        "url_id": url.id,
+        "original_url": url.original_url,
+        "expires_at": (
+            url.expires_at.astimezone(timezone.utc).isoformat()
+            if url.expires_at is not None
+            else None
+        ),
+    }
+
+    redis_client.set(
+        short_url,
+        json.dumps(cached_data)
+    )
+
+    rq_queue.enqueue(
         process_click_event,
         url.id,
         datetime.now(timezone.utc),
         request.remote_addr,
         request.headers.get("User-Agent"),
         request.referrer
-    )  
-     
+    )
+
     return redirect(url.original_url)
-          
-     
+
+
 def encode_base62(number):
     characters = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
     result = ""
@@ -270,4 +371,4 @@ def encode_base62(number):
     return result
 
 
-#1. Hot short codes
+# 1. Hot short codes

@@ -1,6 +1,7 @@
 const form = document.getElementById("shorten-form");
 const originalUrlInput = document.getElementById("original-url");
 const aliasInput = document.getElementById("alias");
+const expiresAtInput = document.getElementById("expires-at");
 const shortenButton = document.getElementById("shorten-button");
 const shortenButtonText = document.getElementById("shorten-button-text");
 const formMessage = document.getElementById("form-message");
@@ -93,11 +94,27 @@ function validateUrl(value) {
 }
 
 
+function getExpiryIsoValue(value) {
+    if (!value) {
+        return null;
+    }
+
+    const localDate = new Date(value);
+
+    if (Number.isNaN(localDate.getTime())) {
+        return null;
+    }
+
+    return localDate.toISOString();
+}
+
+
 async function shortenUrl(event) {
     event.preventDefault();
 
     const originalUrl = originalUrlInput.value.trim();
     const alias = aliasInput.value.trim();
+    const expiresAt = expiresAtInput.value;
 
     setMessage(formMessage, "");
     setMessage(copyMessage, "");
@@ -110,6 +127,20 @@ async function shortenUrl(event) {
         return;
     }
 
+    if (expiresAt) {
+        const expiryIsoValue = getExpiryIsoValue(expiresAt);
+
+        if (!expiryIsoValue) {
+            setMessage(
+                formMessage,
+                "Please enter a valid expiry date and time.",
+                "error"
+            );
+            expiresAtInput.focus();
+            return;
+        }
+    }
+
     setShorteningState(true);
 
     try {
@@ -119,6 +150,10 @@ async function shortenUrl(event) {
 
         if (alias) {
             requestBody.alias = alias;
+        }
+
+        if (expiresAt) {
+            requestBody.expires_at = getExpiryIsoValue(expiresAt);
         }
 
         const response = await fetch("/shorten", {
