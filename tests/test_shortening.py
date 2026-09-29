@@ -1,3 +1,4 @@
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -58,27 +59,55 @@ class ShorteningRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.get_json(), {"short_url": encode_base62(next_id)})
-        self.assertIsNotNone(URL.query.filter_by(short_url=encode_base62(next_id)).first())
+        self.assertEqual(
+            response.get_json(),
+            {"short_url": encode_base62(next_id)},
+        )
+        self.assertIsNotNone(
+            URL.query.filter_by(
+                short_url=encode_base62(next_id)
+            ).first()
+        )
 
     def test_valid_alias_is_normalized_and_stored(self):
         response = self.client.post(
             "/shorten",
-            json={"original_url": "https://example.com", "alias": "My_Project-2026"},
+            json={
+                "original_url": "https://example.com",
+                "alias": "My_Project-2026",
+            },
         )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.get_json(), {"short_url": "my_project-2026"})
-        self.assertIsNotNone(URL.query.filter_by(short_url="my_project-2026").first())
+        self.assertEqual(
+            response.get_json(),
+            {"short_url": "my_project-2026"},
+        )
+        self.assertIsNotNone(
+            URL.query.filter_by(
+                short_url="my_project-2026"
+            ).first()
+        )
 
     def test_invalid_aliases_return_bad_request_without_creating_url(self):
-        invalid_aliases = ["my project", "my/project", "my.project", "my@project", "ab", "a" * 51, None]
+        invalid_aliases = [
+            "my project",
+            "my/project",
+            "my.project",
+            "my@project",
+            "ab",
+            "a" * 51,
+            None,
+        ]
 
         for alias in invalid_aliases:
             with self.subTest(alias=alias):
                 response = self.client.post(
                     "/shorten",
-                    json={"original_url": "https://example.com", "alias": alias},
+                    json={
+                        "original_url": "https://example.com",
+                        "alias": alias,
+                    },
                 )
 
                 self.assertEqual(response.status_code, 400)
@@ -89,7 +118,10 @@ class ShorteningRouteTests(unittest.TestCase):
 
         response = self.client.post(
             "/shorten",
-            json={"original_url": "https://other.example", "alias": "MY-PROJECT"},
+            json={
+                "original_url": "https://other.example",
+                "alias": "MY-PROJECT",
+            },
         )
 
         self.assertEqual(response.status_code, 409)
@@ -104,56 +136,138 @@ class ShorteningRouteTests(unittest.TestCase):
 
         response = self.client.post(
             "/shorten",
-            json={"original_url": "https://other.example", "alias": "abc123"},
+            json={
+                "original_url": "https://other.example",
+                "alias": "abc123",
+            },
         )
 
         self.assertEqual(response.status_code, 409)
         self.assertEqual(URL.query.count(), 1)
 
     def test_reserved_aliases_are_case_insensitive(self):
-        for alias in ("shorten", "analytics", "static", "SHORTEN", "ANALYTICS", "STATIC"):
+        for alias in (
+            "shorten",
+            "analytics",
+            "static",
+            "SHORTEN",
+            "ANALYTICS",
+            "STATIC",
+        ):
             with self.subTest(alias=alias):
                 response = self.client.post(
                     "/shorten",
-                    json={"original_url": "https://example.com", "alias": alias},
+                    json={
+                        "original_url": "https://example.com",
+                        "alias": alias,
+                    },
                 )
 
                 self.assertEqual(response.status_code, 409)
                 self.assertEqual(
                     response.get_json(),
-                    {"error": "Alias is not available. Please choose another one."},
+                    {
+                        "error": (
+                            "Alias is not available. "
+                            "Please choose another one."
+                        )
+                    },
                 )
                 self.assertEqual(URL.query.count(), 0)
 
     def test_generated_short_url_still_redirects(self):
-        self.create_url("abc123", "https://example.com/generated")
+        created_url = self.create_url(
+            "abc123",
+            "https://example.com/generated",
+        )
 
-        with patch("routes.redis_client.get", return_value=None), patch(
+        with patch(
+            "routes.redis_client.get",
+            return_value=None,
+        ), patch(
             "routes.redis_client.set"
-        ) as cache_set, patch("routes.rq_queue.enqueue") as enqueue:
-            response = self.client.get("/abc123", follow_redirects=False)
+        ) as cache_set, patch(
+            "routes.rq_queue.enqueue"
+        ) as enqueue:
+
+            response = self.client.get(
+                "/abc123",
+                follow_redirects=False,
+            )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers["Location"], "https://example.com/generated")
-        cache_set.assert_called_once_with("abc123", "https://example.com/generated")
+        self.assertEqual(
+            response.headers["Location"],
+            "https://example.com/generated",
+        )
+
+        cache_set.assert_called_once()
+
+        cache_key, cache_value = cache_set.call_args.args
+        self.assertEqual(cache_key, "abc123")
+        self.assertEqual(
+            json.loads(cache_value),
+            {
+                "url_id": created_url.id,
+                "original_url": "https://example.com/generated",
+                "expires_at": None,
+                "is_active": True,
+            },
+        )
+
         enqueue.assert_called_once()
 
     def test_custom_alias_redirects_and_uses_existing_analytics(self):
-        self.create_url("my-project", "https://example.com/alias")
+        created_url = self.create_url(
+            "my-project",
+            "https://example.com/alias",
+        )
 
-        with patch("routes.redis_client.get", return_value=None), patch(
+        with patch(
+            "routes.redis_client.get",
+            return_value=None,
+        ), patch(
             "routes.redis_client.set"
-        ) as cache_set, patch("routes.rq_queue.enqueue") as enqueue:
-            redirect_response = self.client.get("/my-project", follow_redirects=False)
+        ) as cache_set, patch(
+            "routes.rq_queue.enqueue"
+        ) as enqueue:
 
-        analytics_response = self.client.get("/my-project/analytics")
+            redirect_response = self.client.get(
+                "/my-project",
+                follow_redirects=False,
+            )
+
+        analytics_response = self.client.get(
+            "/my-project/analytics"
+        )
 
         self.assertEqual(redirect_response.status_code, 302)
-        self.assertEqual(redirect_response.headers["Location"], "https://example.com/alias")
-        cache_set.assert_called_once_with("my-project", "https://example.com/alias")
+        self.assertEqual(
+            redirect_response.headers["Location"],
+            "https://example.com/alias",
+        )
+
+        cache_set.assert_called_once()
+
+        cache_key, cache_value = cache_set.call_args.args
+        self.assertEqual(cache_key, "my-project")
+        self.assertEqual(
+            json.loads(cache_value),
+            {
+                "url_id": created_url.id,
+                "original_url": "https://example.com/alias",
+                "expires_at": None,
+                "is_active": True,
+            },
+        )
+
         enqueue.assert_called_once()
+
         self.assertEqual(analytics_response.status_code, 200)
-        self.assertEqual(analytics_response.get_json()["total_clicks"], 0)
+        self.assertEqual(
+            analytics_response.get_json()["total_clicks"],
+            0,
+        )
 
 
 if __name__ == "__main__":

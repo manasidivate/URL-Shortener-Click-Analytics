@@ -6,6 +6,7 @@ class URL(db.Model):
     original_url = db.Column(db.String(2048), nullable=False)
     short_url = db.Column(db.String(50), nullable=False, unique=True)
     expires_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
 
     click_events = db.relationship(
         "ClickEvent",

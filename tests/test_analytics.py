@@ -1,3 +1,4 @@
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -96,6 +97,7 @@ class AnalyticsRouteTests(unittest.TestCase):
         requested_url = self.add_url("counted")
         other_url = self.add_url("other")
         now = self.now
+
         db.session.add_all(
             [
                 ClickEvent(url_id=requested_url.id, timestamp=now),
@@ -270,6 +272,7 @@ class AnalyticsRouteTests(unittest.TestCase):
     def test_events_with_only_null_countries_return_empty_ranking(self):
         requested_url = self.add_url("null-countries")
         now = self.now
+
         db.session.add_all(
             [
                 ClickEvent(url_id=requested_url.id, timestamp=now),
@@ -354,7 +357,7 @@ class AnalyticsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json(), {"error": "Short URL not found"})
 
     def test_redirect_still_caches_and_enqueues_click_processing(self):
-        self.add_url("go")
+        created_url = self.add_url("go")
 
         with patch("routes.redis_client.get", return_value=None), patch(
             "routes.redis_client.set"
@@ -363,7 +366,21 @@ class AnalyticsRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "https://example.com")
-        cache_set.assert_called_once_with("go", "https://example.com")
+
+        cache_set.assert_called_once()
+
+        cache_key, cache_value = cache_set.call_args.args
+        self.assertEqual(cache_key, "go")
+        self.assertEqual(
+            json.loads(cache_value),
+            {
+                "url_id": created_url.id,
+                "original_url": "https://example.com",
+                "expires_at": None,
+                "is_active": True,
+            },
+        )
+
         enqueue.assert_called_once()
 
 

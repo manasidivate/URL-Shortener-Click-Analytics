@@ -14,6 +14,7 @@ import json
 
 url_routes = Blueprint("url_routes", __name__)
 
+
 RESERVED_ALIASES = {"shorten", "analytics", "static"}
 ALIAS_PATTERN = re.compile(r"[a-z0-9_-]{3,50}")
 
@@ -262,6 +263,43 @@ def get_analytics(short_url):
     }, 200
 
 
+# FR7: Link activation/deactivation
+@url_routes.route("/<short_url>", methods=["PATCH"])
+def update_link_status(short_url):
+    data = request.get_json(silent=True)
+
+    if data is None:
+        return {"error": "Request body must be valid JSON"}, 400
+
+    if "is_active" not in data:
+        return {"error": "is_active is required"}, 400
+
+    if not isinstance(data["is_active"], bool):
+        return {"error": "is_active must be a boolean"}, 400
+
+    try:
+        url = URL.query.filter_by(short_url=short_url).first()
+
+        if not url:
+            return {"error": "Short URL not found"}, 404
+
+        url.is_active = data["is_active"]
+
+        db.session.commit()
+
+        # FR7: Invalidate cached redirect after state change.
+        redis_client.delete(short_url)
+
+    except SQLAlchemyError:
+        db.session.rollback()
+        return {"error": "Database error"}, 500
+
+    return {
+        "short_url": short_url,
+        "is_active": url.is_active
+    }, 200
+
+
 @url_routes.route("/<short_url>", methods=["GET"])
 def redirect_url(short_url):
     cached_url = redis_client.get(short_url)
@@ -279,11 +317,20 @@ def redirect_url(short_url):
             cached_url_id = cached_data.get("url_id")
             cached_original_url = cached_data.get("original_url")
             cached_expires_at = cached_data.get("expires_at")
+            cached_is_active = cached_data.get("is_active")
 
             if not cached_url_id or not cached_original_url:
                 redis_client.delete(short_url)
 
             else:
+                # FR7: Deactivated links must never redirect from cache.
+                if cached_is_active is False:
+                    redis_client.delete(short_url)
+
+                    return render_template(
+                        "deactivated.html"
+                    ), 403
+
                 if cached_expires_at:
                     cached_expiry = datetime.fromisoformat(
                         cached_expires_at
@@ -317,6 +364,14 @@ def redirect_url(short_url):
     if not url:
         return {"error": "Short URL not found"}, 404
 
+    # FR7: Check activation state before allowing redirect.
+    if not url.is_active:
+        redis_client.delete(short_url)
+
+        return render_template(
+            "deactivated.html"
+        ), 403
+
     # FR6: Check expiry before creating/using redirect cache.
     if url.expires_at is not None:
         current_time = datetime.now(timezone.utc)
@@ -341,6 +396,7 @@ def redirect_url(short_url):
             if url.expires_at is not None
             else None
         ),
+        "is_active": url.is_active
     }
 
     redis_client.set(

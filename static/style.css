@@ -294,8 +294,7 @@ input[type="datetime-local"]:focus {
 
 .divider {
     height: 1px;
-    margin: 28px 0;
-
+    margin: 16px 0;
     background: var(--border);
 }
 
@@ -356,6 +355,59 @@ input[type="datetime-local"]:focus {
     gap: 8px;
 
     flex-shrink: 0;
+}
+
+
+/* ---------------------------------------------------------
+   LINK MANAGEMENT
+--------------------------------------------------------- */
+
+.link-management {
+    margin-top: 0;
+    padding-top: 0;
+}
+
+
+.link-management-heading h4 {
+    font-size: 15px;
+    font-weight: 650;
+}
+
+
+.link-management-heading p {
+    margin-top: 4px;
+
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+
+.link-management-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+
+    margin-top: 16px;
+    padding: 14px 15px;
+
+    background: var(--surface-soft);
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius-small);
+}
+
+
+.link-status {
+    color: var(--success);
+
+    font-size: 14px;
+    font-weight: 650;
+}
+
+
+.link-management-message {
+    margin-top: 9px;
 }
 
 
@@ -626,7 +678,9 @@ input[type="datetime-local"]:focus {
 }
 
 
-/* TABLET */
+/* ---------------------------------------------------------
+   TABLET
+--------------------------------------------------------- */
 
 @media (max-width: 800px) {
 
@@ -649,7 +703,9 @@ input[type="datetime-local"]:focus {
 }
 
 
-/* MOBILE */
+/* ---------------------------------------------------------
+   MOBILE
+--------------------------------------------------------- */
 
 @media (max-width: 620px) {
 
@@ -701,6 +757,17 @@ input[type="datetime-local"]:focus {
     }
 
 
+    .link-management-row {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+
+    .link-management-row .button {
+        width: 100%;
+    }
+
+
     .analytics-section {
         margin-top: 36px;
     }
@@ -744,7 +811,10 @@ input[type="datetime-local"]:focus {
 
 }
 
-/* EXPIRED LINK PAGE */
+
+/* ---------------------------------------------------------
+   EXPIRED LINK PAGE
+--------------------------------------------------------- */
 
 .expired-page {
     min-height: 100vh;
@@ -814,7 +884,10 @@ input[type="datetime-local"]:focus {
     line-height: 1.6;
 }
 
-/* EXPIRED LINK PAGE - MOBILE */
+
+/* ---------------------------------------------------------
+   EXPIRED LINK PAGE - MOBILE
+--------------------------------------------------------- */
 
 @media (max-width: 620px) {
 
@@ -833,4 +906,3 @@ input[type="datetime-local"]:focus {
     }
 
 }
-

@@ -1,3 +1,5 @@
+import os
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -12,7 +14,13 @@ from routes import url_routes
 class ExpirationRouteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.app = Flask(__name__)
+        cls.app = Flask(
+            __name__,
+            template_folder=os.path.join(
+                os.path.dirname(os.path.dirname(__file__)),
+                "templates",
+            ),
+        )
         cls.app.config.update(
             TESTING=True,
             SQLALCHEMY_DATABASE_URI="sqlite://",
@@ -158,10 +166,13 @@ class ExpirationRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 410)
-        self.assertEqual(
-            response.get_json(),
-            {"error": "This short URL has expired."},
+        self.assertEqual(response.content_type, "text/html; charset=utf-8")
+        self.assertIn(b"Link expired", response.data)
+        self.assertIn(
+            b"This short URL has expired and is no longer available.",
+            response.data,
         )
+
         cache_delete.assert_called_once_with("expired")
         enqueue.assert_not_called()
 
@@ -193,6 +204,8 @@ class ExpirationRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 410)
+        self.assertIn(b"Link expired", response.data)
+
         cache_delete.assert_called_once_with("boundary")
         enqueue.assert_not_called()
 
@@ -326,10 +339,13 @@ class ExpirationRouteTests(unittest.TestCase):
         enqueue.assert_not_called()
 
     def test_expired_cached_url_is_invalidated_and_returns_410(self):
-        expired_cache = (
-            '{"url_id": 1, '
-            '"original_url": "https://example.com", '
-            '"expires_at": "2026-09-28T11:59:59+00:00"}'
+        expired_cache = json.dumps(
+            {
+                "url_id": 1,
+                "original_url": "https://example.com",
+                "expires_at": "2026-09-28T11:59:59+00:00",
+                "is_active": True,
+            }
         )
 
         with patch(
@@ -352,18 +368,24 @@ class ExpirationRouteTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 410)
-        self.assertEqual(
-            response.get_json(),
-            {"error": "This short URL has expired."},
+        self.assertEqual(response.content_type, "text/html; charset=utf-8")
+        self.assertIn(b"Link expired", response.data)
+        self.assertIn(
+            b"This short URL has expired and is no longer available.",
+            response.data,
         )
+
         cache_delete.assert_called_once_with("cached-expired")
         enqueue.assert_not_called()
 
     def test_active_cached_url_redirects_without_database_lookup(self):
-        cached_url = (
-            '{"url_id": 1, '
-            '"original_url": "https://example.com/cached", '
-            '"expires_at": "2026-09-28T13:00:00+00:00"}'
+        cached_url = json.dumps(
+            {
+                "url_id": 1,
+                "original_url": "https://example.com/cached",
+                "expires_at": "2026-09-28T13:00:00+00:00",
+                "is_active": True,
+            }
         )
 
         with patch(

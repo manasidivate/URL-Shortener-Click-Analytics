@@ -13,6 +13,12 @@ const openButton = document.getElementById("open-button");
 const analyticsButton = document.getElementById("analytics-button");
 const copyMessage = document.getElementById("copy-message");
 
+const linkStatus = document.getElementById("link-status");
+const toggleLinkButton = document.getElementById("toggle-link-button");
+const linkManagementMessage = document.getElementById(
+    "link-management-message"
+);
+
 const analyticsSection = document.getElementById("analytics-section");
 const analyticsUrl = document.getElementById("analytics-url");
 const analyticsMessage = document.getElementById("analytics-message");
@@ -25,8 +31,13 @@ const countriesList = document.getElementById("countries-list");
 const referrersList = document.getElementById("referrers-list");
 
 let currentShortCode = null;
+let currentLinkActive = true;
 let copyMessageTimeout = null;
 
+
+/* ---------------------------------------------------------
+   MESSAGE HELPERS
+--------------------------------------------------------- */
 
 function setMessage(element, message, type = "") {
     element.textContent = message;
@@ -38,8 +49,13 @@ function setMessage(element, message, type = "") {
 }
 
 
+/* ---------------------------------------------------------
+   BUTTON STATES
+--------------------------------------------------------- */
+
 function setShorteningState(isLoading) {
     shortenButton.disabled = isLoading;
+
     shortenButtonText.textContent = isLoading
         ? "Shortening..."
         : "Shorten URL";
@@ -56,10 +72,118 @@ function setAnalyticsState(isLoading) {
 }
 
 
+function setLinkManagementState(isLoading) {
+    toggleLinkButton.disabled = isLoading;
+
+    toggleLinkButton.textContent = isLoading
+        ? "Updating..."
+        : currentLinkActive
+            ? "Deactivate"
+            : "Reactivate";
+}
+
+
+/* ---------------------------------------------------------
+   URL HELPERS
+--------------------------------------------------------- */
+
 function buildShortUrl(shortCode) {
     return `${window.location.origin}/${encodeURIComponent(shortCode)}`;
 }
 
+
+/* ---------------------------------------------------------
+   LINK MANAGEMENT
+--------------------------------------------------------- */
+
+function updateLinkStatusUI(isActive) {
+    currentLinkActive = isActive;
+
+    linkStatus.textContent = isActive
+        ? "Active"
+        : "Deactivated";
+
+    toggleLinkButton.textContent = isActive
+        ? "Deactivate"
+        : "Reactivate";
+}
+
+
+async function toggleLinkStatus() {
+    if (!currentShortCode) {
+        return;
+    }
+
+    const newStatus = !currentLinkActive;
+
+    setMessage(linkManagementMessage, "");
+    setLinkManagementState(true);
+
+    try {
+        const response = await fetch(
+            `/${encodeURIComponent(currentShortCode)}`,
+            {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    is_active: newStatus
+                })
+            }
+        );
+
+        let data;
+
+        try {
+            data = await response.json();
+        } catch {
+            throw new Error("The server returned an invalid response.");
+        }
+
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error("This short URL could not be found.");
+            }
+
+            throw new Error(
+                data.error || "Unable to update the short URL."
+            );
+        }
+
+        updateLinkStatusUI(data.is_active);
+
+        setMessage(
+            linkManagementMessage,
+            data.is_active
+                ? "Short URL has been reactivated."
+                : "Short URL has been deactivated.",
+            "success"
+        );
+
+    } catch (error) {
+        if (error instanceof TypeError) {
+            setMessage(
+                linkManagementMessage,
+                "Unable to connect to the server. Please try again.",
+                "error"
+            );
+        } else {
+            setMessage(
+                linkManagementMessage,
+                error.message || "Unable to update the short URL.",
+                "error"
+            );
+        }
+    } finally {
+        setLinkManagementState(false);
+    }
+}
+
+
+/* ---------------------------------------------------------
+   SUCCESS PANEL
+--------------------------------------------------------- */
 
 function showSuccess(shortCode) {
     const fullShortUrl = buildShortUrl(shortCode);
@@ -68,12 +192,19 @@ function showSuccess(shortCode) {
     shortUrlElement.href = fullShortUrl;
     openButton.href = fullShortUrl;
 
+    updateLinkStatusUI(true);
+    setMessage(linkManagementMessage, "");
+
     successPanel.classList.remove("hidden");
 
     setMessage(formMessage, "Short URL created.", "success");
     setMessage(copyMessage, "");
 }
 
+
+/* ---------------------------------------------------------
+   URL VALIDATION
+--------------------------------------------------------- */
 
 function validateUrl(value) {
     if (!value) {
@@ -94,6 +225,10 @@ function validateUrl(value) {
 }
 
 
+/* ---------------------------------------------------------
+   EXPIRY HANDLING
+--------------------------------------------------------- */
+
 function getExpiryIsoValue(value) {
     if (!value) {
         return null;
@@ -109,6 +244,10 @@ function getExpiryIsoValue(value) {
 }
 
 
+/* ---------------------------------------------------------
+   SHORTEN URL
+--------------------------------------------------------- */
+
 async function shortenUrl(event) {
     event.preventDefault();
 
@@ -118,6 +257,7 @@ async function shortenUrl(event) {
 
     setMessage(formMessage, "");
     setMessage(copyMessage, "");
+    setMessage(linkManagementMessage, "");
 
     const validationError = validateUrl(originalUrl);
 
@@ -136,6 +276,7 @@ async function shortenUrl(event) {
                 "Please enter a valid expiry date and time.",
                 "error"
             );
+
             expiresAtInput.focus();
             return;
         }
@@ -178,6 +319,7 @@ async function shortenUrl(event) {
                 data.error || "Unable to shorten the URL.",
                 "error"
             );
+
             return;
         }
 
@@ -187,14 +329,17 @@ async function shortenUrl(event) {
                 "The server did not return a short URL.",
                 "error"
             );
+
             return;
         }
 
         currentShortCode = data.short_url;
+        currentLinkActive = true;
 
         showSuccess(currentShortCode);
 
         analyticsSection.classList.add("hidden");
+
     } catch (error) {
         if (error instanceof TypeError) {
             setMessage(
@@ -209,11 +354,16 @@ async function shortenUrl(event) {
                 "error"
             );
         }
+
     } finally {
         setShorteningState(false);
     }
 }
 
+
+/* ---------------------------------------------------------
+   ANALYTICS
+--------------------------------------------------------- */
 
 function renderMetrics(data) {
     totalClicksElement.textContent = Number.isFinite(data.total_clicks)
@@ -385,6 +535,7 @@ async function loadAnalytics() {
             "Analytics updated.",
             "success"
         );
+
     } catch (error) {
         if (error instanceof TypeError) {
             setMessage(
@@ -399,11 +550,16 @@ async function loadAnalytics() {
                 "error"
             );
         }
+
     } finally {
         setAnalyticsState(false);
     }
 }
 
+
+/* ---------------------------------------------------------
+   COPY SHORT URL
+--------------------------------------------------------- */
 
 async function copyShortUrl() {
     const url = shortUrlElement.textContent;
@@ -437,6 +593,10 @@ async function copyShortUrl() {
 }
 
 
+/* ---------------------------------------------------------
+   EVENT LISTENERS
+--------------------------------------------------------- */
+
 form.addEventListener("submit", shortenUrl);
 
 copyButton.addEventListener("click", copyShortUrl);
@@ -444,3 +604,5 @@ copyButton.addEventListener("click", copyShortUrl);
 analyticsButton.addEventListener("click", loadAnalytics);
 
 refreshButton.addEventListener("click", loadAnalytics);
+
+toggleLinkButton.addEventListener("click", toggleLinkStatus);

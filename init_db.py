@@ -18,4 +18,13 @@ with app.app_context():
         )
     )
 
+    db.session.execute(
+        text(
+            """
+            ALTER TABLE url
+            ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE
+            """
+        )
+    )
+
     db.session.commit()
