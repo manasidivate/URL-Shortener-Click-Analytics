@@ -1,4 +1,14 @@
-from flask import Blueprint, request, redirect, render_template
+from io import BytesIO
+
+import qrcode
+from flask import (
+    Blueprint,
+    request,
+    redirect,
+    render_template,
+    send_file,
+    url_for,
+)
 from models import URL, ClickEvent
 from extensions import db
 from sqlalchemy import func, text
@@ -261,6 +271,44 @@ def get_analytics(short_url):
         ],
         "clicks_over_time": clicks_over_time,
     }, 200
+
+
+@url_routes.route("/<short_url>/qr", methods=["GET"])
+def get_qr_code(short_url):
+    try:
+        url = URL.query.filter_by(short_url=short_url).first()
+
+    except SQLAlchemyError:
+        db.session.rollback()
+        return {"error": "Database error"}, 500
+
+    if not url:
+        return {"error": "Short URL not found"}, 404
+
+    if not url.is_active:
+        return render_template("deactivated.html"), 403
+
+    if url.expires_at is not None:
+        current_time = datetime.now(timezone.utc)
+        expiry_time = url.expires_at
+
+        if expiry_time.tzinfo is None:
+            expiry_time = expiry_time.replace(tzinfo=timezone.utc)
+
+        if current_time >= expiry_time:
+            return render_template("expired.html"), 410
+
+    short_url_payload = url_for(
+        "url_routes.redirect_url",
+        short_url=short_url,
+        _external=True,
+    )
+
+    image_buffer = BytesIO()
+    qrcode.make(short_url_payload).save(image_buffer, format="PNG")
+    image_buffer.seek(0)
+
+    return send_file(image_buffer, mimetype="image/png")
 
 
 # FR7: Link activation/deactivation

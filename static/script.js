@@ -10,8 +10,12 @@ const successPanel = document.getElementById("success-panel");
 const shortUrlElement = document.getElementById("short-url");
 const copyButton = document.getElementById("copy-button");
 const openButton = document.getElementById("open-button");
+const qrButton = document.getElementById("qr-button");
 const analyticsButton = document.getElementById("analytics-button");
 const copyMessage = document.getElementById("copy-message");
+const qrPanel = document.getElementById("qr-panel");
+const qrImage = document.getElementById("qr-image");
+const qrMessage = document.getElementById("qr-message");
 
 const linkStatus = document.getElementById("link-status");
 const toggleLinkButton = document.getElementById("toggle-link-button");
@@ -33,6 +37,7 @@ const referrersList = document.getElementById("referrers-list");
 let currentShortCode = null;
 let currentLinkActive = true;
 let copyMessageTimeout = null;
+let qrImageObjectUrl = null;
 
 
 /* ---------------------------------------------------------
@@ -69,6 +74,12 @@ function setAnalyticsState(isLoading) {
     refreshButton.textContent = isLoading
         ? "Refreshing..."
         : "Refresh";
+}
+
+
+function setQrState(isLoading) {
+    qrButton.disabled = isLoading;
+    qrButton.textContent = isLoading ? "Loading..." : "QR";
 }
 
 
@@ -193,12 +204,96 @@ function showSuccess(shortCode) {
     openButton.href = fullShortUrl;
 
     updateLinkStatusUI(true);
+    resetQrDisplay();
     setMessage(linkManagementMessage, "");
 
     successPanel.classList.remove("hidden");
 
     setMessage(formMessage, "Short URL created.", "success");
     setMessage(copyMessage, "");
+}
+
+
+function resetQrDisplay() {
+    if (qrImageObjectUrl) {
+        URL.revokeObjectURL(qrImageObjectUrl);
+        qrImageObjectUrl = null;
+    }
+
+    qrImage.removeAttribute("src");
+    qrImage.classList.add("hidden");
+    qrPanel.classList.add("hidden");
+    setMessage(qrMessage, "");
+    setQrState(false);
+}
+
+
+async function loadQrCode() {
+    if (!currentShortCode) {
+        return;
+    }
+
+    setMessage(qrMessage, "");
+    setQrState(true);
+
+    try {
+        const response = await fetch(
+            `/${encodeURIComponent(currentShortCode)}/qr`
+        );
+
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error("This short URL could not be found.");
+            }
+
+            if (response.status === 403) {
+                throw new Error("This short URL has been deactivated.");
+            }
+
+            if (response.status === 410) {
+                throw new Error("This short URL has expired.");
+            }
+
+            throw new Error("Unable to generate the QR code.");
+        }
+
+        const imageBlob = await response.blob();
+
+        if (qrImageObjectUrl) {
+            URL.revokeObjectURL(qrImageObjectUrl);
+        }
+
+        qrImageObjectUrl = URL.createObjectURL(imageBlob);
+        qrImage.src = qrImageObjectUrl;
+        qrImage.classList.remove("hidden");
+        qrPanel.classList.remove("hidden");
+
+    } catch (error) {
+        if (qrImageObjectUrl) {
+            URL.revokeObjectURL(qrImageObjectUrl);
+            qrImageObjectUrl = null;
+        }
+
+        qrImage.removeAttribute("src");
+        qrImage.classList.add("hidden");
+        qrPanel.classList.remove("hidden");
+
+        if (error instanceof TypeError) {
+            setMessage(
+                qrMessage,
+                "Unable to connect to the server. Please try again.",
+                "error"
+            );
+        } else {
+            setMessage(
+                qrMessage,
+                error.message || "Unable to generate the QR code.",
+                "error"
+            );
+        }
+    } finally {
+        setQrState(false);
+    }
 }
 
 
@@ -600,6 +695,8 @@ async function copyShortUrl() {
 form.addEventListener("submit", shortenUrl);
 
 copyButton.addEventListener("click", copyShortUrl);
+
+qrButton.addEventListener("click", loadQrCode);
 
 analyticsButton.addEventListener("click", loadAnalytics);
 

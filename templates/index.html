@@ -143,6 +143,14 @@
 
                         <button
                             type="button"
+                            id="qr-button"
+                            class="button button-secondary"
+                        >
+                            QR
+                        </button>
+
+                        <button
+                            type="button"
                             id="analytics-button"
                             class="button button-primary"
                         >
@@ -151,6 +159,20 @@
 
                     </div>
 
+                </div>
+
+                <div
+                    id="qr-panel"
+                    class="qr-panel hidden"
+                    aria-live="polite"
+                >
+                    <img
+                        id="qr-image"
+                        class="qr-image"
+                        alt="QR code for your short URL"
+                    >
+
+                    <p id="qr-message" class="message"></p>
                 </div>
 
                 <p

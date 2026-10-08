@@ -358,6 +358,29 @@ input[type="datetime-local"]:focus {
 }
 
 
+.qr-panel {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    gap: 12px;
+
+    margin-top: 16px;
+    padding: 16px;
+
+    background: var(--surface-soft);
+
+    border: 1px solid var(--border);
+    border-radius: var(--radius-small);
+}
+
+
+.qr-image {
+    width: 220px;
+    height: 220px;
+    max-width: 100%;
+}
+
+
 /* ---------------------------------------------------------
    LINK MANAGEMENT
 --------------------------------------------------------- */
