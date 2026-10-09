@@ -566,6 +566,11 @@ input[type="datetime-local"]:focus {
 }
 
 
+.timeline.timeline-compact {
+    min-height: 82px;
+}
+
+
 .timeline-day {
     display: flex;
     flex-direction: column;
@@ -574,6 +579,11 @@ input[type="datetime-local"]:focus {
 
     min-width: 0;
     height: 220px;
+}
+
+
+.timeline-compact .timeline-day {
+    height: 72px;
 }
 
 
@@ -597,9 +607,12 @@ input[type="datetime-local"]:focus {
 
     overflow: hidden;
 
-    background: #f0f2f6;
-
     border-radius: 7px 7px 4px 4px;
+}
+
+
+.timeline-compact .timeline-bar-container {
+    height: 0;
 }
 
 

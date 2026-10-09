@@ -297,6 +297,44 @@ class AnalyticsRouteTests(unittest.TestCase):
             },
         )
 
+    def test_events_with_only_null_referrers_return_empty_ranking(self):
+        requested_url = self.add_url("null-referrers")
+        now = self.now
+
+        db.session.add_all(
+            [
+                ClickEvent(
+                    url_id=requested_url.id,
+                    timestamp=now,
+                    referrer=None,
+                    visitor_hash="hash-a",
+                ),
+                ClickEvent(
+                    url_id=requested_url.id,
+                    timestamp=now,
+                    referrer=None,
+                    visitor_hash="hash-a",
+                ),
+            ]
+        )
+        db.session.commit()
+
+        response = self.get_analytics("null-referrers")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json(),
+            {
+                "total_clicks": 2,
+                "unique_visitors": 1,
+                "top_countries": [],
+                "top_referrers": [],
+                "clicks_over_time": self.clicks_over_time(
+                    {self.now.date().isoformat(): 2}
+                ),
+            },
+        )
+
     def test_unique_visitors_counts_distinct_non_null_hashes_for_url(self):
         requested_url = self.add_url("visitors")
         other_url = self.add_url("other-visitors")

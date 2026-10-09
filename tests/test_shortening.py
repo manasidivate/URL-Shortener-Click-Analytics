@@ -1,13 +1,13 @@
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from flask import Flask
 
 from extensions import db
 from models import ClickEvent, URL
-from routes import encode_base62, url_routes
+from routes import encode_base62, process_click_event, url_routes
 
 
 class ShorteningRouteTests(unittest.TestCase):
@@ -193,6 +193,11 @@ class ShorteningRouteTests(unittest.TestCase):
             response = self.client.get(
                 "/abc123",
                 follow_redirects=False,
+                headers={
+                    "User-Agent": "Metadata Test Agent",
+                    "Referer": "https://source.example/article",
+                },
+                environ_base={"REMOTE_ADDR": "203.0.113.10"},
             )
 
         self.assertEqual(response.status_code, 302)
@@ -215,7 +220,14 @@ class ShorteningRouteTests(unittest.TestCase):
             },
         )
 
-        enqueue.assert_called_once()
+        enqueue.assert_called_once_with(
+            process_click_event,
+            created_url.id,
+            ANY,
+            "203.0.113.10",
+            "Metadata Test Agent",
+            "https://source.example/article",
+        )
 
     def test_custom_alias_redirects_and_uses_existing_analytics(self):
         created_url = self.create_url(

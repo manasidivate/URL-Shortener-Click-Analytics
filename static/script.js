@@ -37,6 +37,7 @@ const referrersList = document.getElementById("referrers-list");
 let currentShortCode = null;
 let currentLinkActive = true;
 let copyMessageTimeout = null;
+let analyticsMessageTimeout = null;
 let qrImageObjectUrl = null;
 
 
@@ -51,6 +52,24 @@ function setMessage(element, message, type = "") {
     if (type) {
         element.classList.add(`message-${type}`);
     }
+}
+
+
+function clearAnalyticsMessage() {
+    clearTimeout(analyticsMessageTimeout);
+    analyticsMessageTimeout = null;
+    setMessage(analyticsMessage, "");
+}
+
+
+function showAnalyticsSuccess() {
+    clearAnalyticsMessage();
+    setMessage(analyticsMessage, "Analytics updated.", "success");
+
+    analyticsMessageTimeout = setTimeout(() => {
+        setMessage(analyticsMessage, "");
+        analyticsMessageTimeout = null;
+    }, 3000);
 }
 
 
@@ -488,6 +507,7 @@ function formatDate(dateString) {
 
 function renderTimeline(clicksOverTime) {
     timelineElement.innerHTML = "";
+    timelineElement.classList.remove("timeline-compact");
 
     if (!Array.isArray(clicksOverTime) || clicksOverTime.length === 0) {
         const emptyState = document.createElement("p");
@@ -498,13 +518,17 @@ function renderTimeline(clicksOverTime) {
         return;
     }
 
-    const maxClicks = Math.max(
-        ...clicksOverTime.map(item => Number(item.clicks) || 0),
-        1
+    const clicksByDay = clicksOverTime.map(item => Number(item.clicks) || 0);
+    const highestClickCount = Math.max(...clicksByDay);
+    const chartScale = 10;
+
+    timelineElement.classList.toggle(
+        "timeline-compact",
+        highestClickCount === 0
     );
 
-    clicksOverTime.forEach(item => {
-        const clicks = Number(item.clicks) || 0;
+    clicksOverTime.forEach((item, index) => {
+        const clicks = clicksByDay[index];
 
         const day = document.createElement("div");
         day.className = "timeline-day";
@@ -521,7 +545,7 @@ function renderTimeline(clicksOverTime) {
 
         const height = clicks === 0
             ? 0
-            : Math.max((clicks / maxClicks) * 100, 8);
+            : Math.max(Math.min((clicks / chartScale) * 100, 100), 8);
 
         bar.style.height = `${height}%`;
 
@@ -589,7 +613,7 @@ function renderAnalytics(data) {
 }
 
 
-async function loadAnalytics() {
+async function loadAnalytics(showSuccess = false) {
     if (!currentShortCode) {
         return;
     }
@@ -597,7 +621,7 @@ async function loadAnalytics() {
     analyticsSection.classList.remove("hidden");
     analyticsUrl.textContent = buildShortUrl(currentShortCode);
 
-    setMessage(analyticsMessage, "");
+    clearAnalyticsMessage();
     setAnalyticsState(true);
 
     try {
@@ -625,11 +649,9 @@ async function loadAnalytics() {
 
         renderAnalytics(data);
 
-        setMessage(
-            analyticsMessage,
-            "Analytics updated.",
-            "success"
-        );
+        if (showSuccess) {
+            showAnalyticsSuccess();
+        }
 
     } catch (error) {
         if (error instanceof TypeError) {
@@ -698,8 +720,8 @@ copyButton.addEventListener("click", copyShortUrl);
 
 qrButton.addEventListener("click", loadQrCode);
 
-analyticsButton.addEventListener("click", loadAnalytics);
+analyticsButton.addEventListener("click", () => loadAnalytics());
 
-refreshButton.addEventListener("click", loadAnalytics);
+refreshButton.addEventListener("click", () => loadAnalytics(true));
 
 toggleLinkButton.addEventListener("click", toggleLinkStatus);
