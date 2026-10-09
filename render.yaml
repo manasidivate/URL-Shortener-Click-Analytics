@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: url-shortener-click-analytics
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt && python scripts/download_geolite2.py
+    startCommand: sh scripts/start_web.sh
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: url-shortener-click-analytics-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: url-shortener-click-analytics-redis
+          property: connectionString
+      - key: VISITOR_HASH_SALT
+        sync: false
+      - key: MAXMIND_ACCOUNT_ID
+        sync: false
+      - key: MAXMIND_LICENSE_KEY
+        sync: false
+      - key: GEOLITE2_DATABASE_PATH
+        value: data/GeoLite2-Country.mmdb
+
+  - type: keyvalue
+    name: url-shortener-click-analytics-redis
+    plan: free
+    region: oregon
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+
+databases:
+  - name: url-shortener-click-analytics-db
+    plan: free
+    region: oregon
+    databaseName: urlshortener
+    user: urlshortener

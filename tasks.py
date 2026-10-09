@@ -60,7 +60,11 @@ def get_user_agent_info(user_agent):
 
 
 def get_country(ip_address):
-    reader = geoip2.database.Reader("data/GeoLite2-Country.mmdb")
+    database_path = os.getenv(
+        "GEOLITE2_DATABASE_PATH",
+        "data/GeoLite2-Country.mmdb",
+    )
+    reader = geoip2.database.Reader(database_path)
 
     try:
         response = reader.country(ip_address)
