@@ -392,8 +392,9 @@ def redirect_url(short_url):
                             "expired.html"
                         ), 410
 
-                current_app.logger.info(
-                    "Click request diagnostics: remote_addr=%r access_route=%r "
+                current_app.logger.warning(
+                    "CLICK_REQUEST_DIAG_V2 Click request diagnostics: "
+                    "remote_addr=%r access_route=%r "
                     "x_forwarded_for=%r referrer=%r",
                     request.remote_addr,
                     list(request.access_route),
@@ -461,8 +462,9 @@ def redirect_url(short_url):
         json.dumps(cached_data)
     )
 
-    current_app.logger.info(
-        "Click request diagnostics: remote_addr=%r access_route=%r "
+    current_app.logger.warning(
+        "CLICK_REQUEST_DIAG_V2 Click request diagnostics: "
+        "remote_addr=%r access_route=%r "
         "x_forwarded_for=%r referrer=%r",
         request.remote_addr,
         list(request.access_route),
