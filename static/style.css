@@ -714,10 +714,12 @@ input[type="datetime-local"]:focus {
 }
 
 .empty-state-description {
-    color: var(--text-secondary);
+    max-width: 340px;
+    margin-top: 4px;
+
+    color: var(--text-muted);
     font-size: 13px;
     line-height: 1.5;
-    margin-top: 2px;
 }
 
 
