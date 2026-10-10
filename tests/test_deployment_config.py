@@ -61,6 +61,27 @@ class ForwardedClientIpTests(unittest.TestCase):
 
         self.assertEqual(response.get_json(), {"remote_addr": "203.0.113.10"})
 
+    def test_render_proxy_uses_client_ip_from_trusted_three_hop_chain(self):
+        with patch.dict(
+            os.environ,
+            {"DATABASE_URL": "sqlite://", "TRUSTED_PROXY_COUNT": "3"},
+            clear=True,
+        ):
+            app = self.create_app_with_remote_address_route()
+
+        response = app.test_client().get(
+            "/remote-address",
+            headers={
+                "X-Forwarded-For": (
+                    "198.51.100.99, 171.76.109.227, "
+                    "162.158.54.18, 10.28.211.133"
+                )
+            },
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+
+        self.assertEqual(response.get_json(), {"remote_addr": "171.76.109.227"})
+
     def test_forwarded_ip_is_not_trusted_without_proxy_configuration(self):
         with patch.dict(os.environ, {"DATABASE_URL": "sqlite://"}, clear=True):
             app = self.create_app_with_remote_address_route()
