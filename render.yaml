@@ -18,6 +18,8 @@ services:
           property: connectionString
       - key: VISITOR_HASH_SALT
         sync: false
+      - key: TRUSTED_PROXY_COUNT
+        value: "1"
       - key: MAXMIND_ACCOUNT_ID
         sync: false
       - key: MAXMIND_LICENSE_KEY

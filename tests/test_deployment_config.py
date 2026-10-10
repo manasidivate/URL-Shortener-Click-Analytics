@@ -8,10 +8,11 @@ import unittest
 from unittest.mock import MagicMock, Mock, call, patch
 from urllib.error import HTTPError
 
-from app import normalize_database_url
+from app import create_app, normalize_database_url
 from extensions import create_redis_clients
 from scripts.download_geolite2 import DownloadError, download_database
 from tasks import get_country
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 
 class DatabaseUrlNormalizationTests(unittest.TestCase):
@@ -29,6 +30,66 @@ class DatabaseUrlNormalizationTests(unittest.TestCase):
         ):
             with self.subTest(database_url=database_url):
                 self.assertEqual(normalize_database_url(database_url), database_url)
+
+
+class ForwardedClientIpTests(unittest.TestCase):
+    @staticmethod
+    def create_app_with_remote_address_route():
+        app = create_app()
+
+        @app.route("/remote-address")
+        def remote_address():
+            from flask import request
+
+            return {"remote_addr": request.remote_addr}
+
+        return app
+
+    def test_render_proxy_uses_one_trusted_forwarded_ip(self):
+        with patch.dict(
+            os.environ,
+            {"DATABASE_URL": "sqlite://", "TRUSTED_PROXY_COUNT": "1"},
+            clear=True,
+        ):
+            app = self.create_app_with_remote_address_route()
+
+        response = app.test_client().get(
+            "/remote-address",
+            headers={"X-Forwarded-For": "198.51.100.99, 203.0.113.10"},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+
+        self.assertEqual(response.get_json(), {"remote_addr": "203.0.113.10"})
+
+    def test_forwarded_ip_is_not_trusted_without_proxy_configuration(self):
+        with patch.dict(os.environ, {"DATABASE_URL": "sqlite://"}, clear=True):
+            app = self.create_app_with_remote_address_route()
+
+        response = app.test_client().get(
+            "/remote-address",
+            headers={"X-Forwarded-For": "198.51.100.99"},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+
+        self.assertEqual(response.get_json(), {"remote_addr": "127.0.0.1"})
+
+    def test_zero_trusted_proxy_count_disables_forwarded_ip_trust(self):
+        with patch.dict(
+            os.environ,
+            {"DATABASE_URL": "sqlite://", "TRUSTED_PROXY_COUNT": "0"},
+            clear=True,
+        ):
+            app = self.create_app_with_remote_address_route()
+
+        self.assertNotIsInstance(app.wsgi_app, ProxyFix)
+
+        response = app.test_client().get(
+            "/remote-address",
+            headers={"X-Forwarded-For": "198.51.100.99"},
+            environ_base={"REMOTE_ADDR": "127.0.0.1"},
+        )
+
+        self.assertEqual(response.get_json(), {"remote_addr": "127.0.0.1"})
 
 
 class RedisConfigurationTests(unittest.TestCase):

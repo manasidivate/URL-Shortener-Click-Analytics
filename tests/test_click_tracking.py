@@ -140,6 +140,47 @@ class ClickTrackingTaskTests(unittest.TestCase):
             [{"referrer": referrer, "clicks": 1}],
         )
 
+    def test_redirect_without_referer_records_no_referrer(self):
+        url = URL(
+            original_url="https://example.com",
+            short_url="direct-visit",
+        )
+        db.session.add(url)
+        db.session.commit()
+
+        with patch("routes.redis_client.get", return_value=None), patch(
+            "routes.redis_client.set"
+        ), patch("routes.rq_queue.enqueue") as enqueue:
+            redirect_response = self.client.get(
+                "/direct-visit",
+                follow_redirects=False,
+                environ_base={"REMOTE_ADDR": "203.0.113.10"},
+            )
+
+        self.assertEqual(redirect_response.status_code, 302)
+        queued_task, *task_args = enqueue.call_args.args
+        self.assertIs(queued_task, process_click_event)
+        self.assertIsNone(task_args[4])
+
+        with patch("tasks.get_country", return_value="India"), patch(
+            "tasks.get_user_agent_info",
+            return_value=("Firefox", "Desktop"),
+        ), patch(
+            "tasks.generate_visitor_hash",
+            return_value="direct-visit-hash",
+        ):
+            queued_task(*task_args)
+
+        event = ClickEvent.query.one()
+        self.assertIsNone(event.referrer)
+
+        analytics_response = self.client.get("/direct-visit/analytics")
+        self.assertEqual(analytics_response.status_code, 200)
+        self.assertEqual(
+            analytics_response.get_json()["top_referrers"],
+            [],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
