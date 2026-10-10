@@ -1,26 +1,24 @@
 from io import BytesIO
+from datetime import datetime, time, timedelta, timezone
+from urllib.parse import urlparse
+import json
+import re
 
 import qrcode
 from flask import (
     Blueprint,
-    current_app,
     request,
     redirect,
     render_template,
     send_file,
     url_for,
 )
-from models import URL, ClickEvent
-from extensions import db
 from sqlalchemy import func, text
-from urllib.parse import urlparse
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from extensions import redis_client
-from datetime import datetime, time, timedelta, timezone
+
+from models import URL, ClickEvent
+from extensions import db, redis_client, rq_queue
 from tasks import process_click_event
-from extensions import rq_queue
-import re
-import json
 
 
 url_routes = Blueprint("url_routes", __name__)
@@ -58,14 +56,20 @@ def shorten_url():
     if alias_provided:
         if not isinstance(alias, str):
             return {
-                "error": "Alias must be 3-50 letters, numbers, hyphens, or underscores only"
+                "error": (
+                    "Alias must be 3-50 letters, numbers, "
+                    "hyphens, or underscores only"
+                )
             }, 400
 
         alias = alias.lower()
 
         if not ALIAS_PATTERN.fullmatch(alias):
             return {
-                "error": "Alias must be 3-50 letters, numbers, hyphens, or underscores"
+                "error": (
+                    "Alias must be 3-50 letters, numbers, "
+                    "hyphens, or underscores"
+                )
             }, 400
 
         if alias in RESERVED_ALIASES:
@@ -106,7 +110,7 @@ def shorten_url():
             url = URL(
                 original_url=original_url,
                 short_url=short_url,
-                expires_at=expires_at
+                expires_at=expires_at,
             )
 
         else:
@@ -122,7 +126,7 @@ def shorten_url():
                 id=next_id,
                 original_url=original_url,
                 short_url=short_url,
-                expires_at=expires_at
+                expires_at=expires_at,
             )
 
         db.session.add(url)
@@ -160,7 +164,9 @@ def get_analytics(short_url):
         )
 
         unique_visitors = (
-            db.session.query(func.count(func.distinct(ClickEvent.visitor_hash)))
+            db.session.query(
+                func.count(func.distinct(ClickEvent.visitor_hash))
+            )
             .filter(
                 ClickEvent.url_id == url.id,
                 ClickEvent.visitor_hash.isnot(None),
@@ -210,7 +216,7 @@ def get_analytics(short_url):
         range_start = datetime.combine(
             start_date,
             time.min,
-            tzinfo=timezone.utc
+            tzinfo=timezone.utc,
         )
 
         range_end = range_start + timedelta(days=7)
@@ -345,7 +351,7 @@ def update_link_status(short_url):
 
     return {
         "short_url": short_url,
-        "is_active": url.is_active
+        "is_active": url.is_active,
     }, 200
 
 
@@ -376,9 +382,7 @@ def redirect_url(short_url):
                 if cached_is_active is False:
                     redis_client.delete(short_url)
 
-                    return render_template(
-                        "deactivated.html"
-                    ), 403
+                    return render_template("deactivated.html"), 403
 
                 if cached_expires_at:
                     cached_expiry = datetime.fromisoformat(
@@ -388,26 +392,15 @@ def redirect_url(short_url):
                     if datetime.now(timezone.utc) >= cached_expiry:
                         redis_client.delete(short_url)
 
-                        return render_template(
-                            "expired.html"
-                        ), 410
+                        return render_template("expired.html"), 410
 
-                current_app.logger.warning(
-                    "CLICK_REQUEST_DIAG_V2 Click request diagnostics: "
-                    "remote_addr=%r access_route=%r "
-                    "x_forwarded_for=%r referrer=%r",
-                    request.remote_addr,
-                    list(request.access_route),
-                    request.headers.get("X-Forwarded-For"),
-                    request.referrer,
-                )
                 rq_queue.enqueue(
                     process_click_event,
                     cached_url_id,
                     datetime.now(timezone.utc),
                     request.remote_addr,
                     request.headers.get("User-Agent"),
-                    request.referrer
+                    request.referrer,
                 )
 
                 return redirect(cached_original_url)
@@ -426,14 +419,11 @@ def redirect_url(short_url):
     if not url.is_active:
         redis_client.delete(short_url)
 
-        return render_template(
-            "deactivated.html"
-        ), 403
+        return render_template("deactivated.html"), 403
 
     # FR6: Check expiry before creating/using redirect cache.
     if url.expires_at is not None:
         current_time = datetime.now(timezone.utc)
-
         expiry_time = url.expires_at
 
         if expiry_time.tzinfo is None:
@@ -442,9 +432,7 @@ def redirect_url(short_url):
         if current_time >= expiry_time:
             redis_client.delete(short_url)
 
-            return render_template(
-                "expired.html"
-            ), 410
+            return render_template("expired.html"), 410
 
     cached_data = {
         "url_id": url.id,
@@ -454,37 +442,30 @@ def redirect_url(short_url):
             if url.expires_at is not None
             else None
         ),
-        "is_active": url.is_active
+        "is_active": url.is_active,
     }
 
     redis_client.set(
         short_url,
-        json.dumps(cached_data)
+        json.dumps(cached_data),
     )
 
-    current_app.logger.warning(
-        "CLICK_REQUEST_DIAG_V2 Click request diagnostics: "
-        "remote_addr=%r access_route=%r "
-        "x_forwarded_for=%r referrer=%r",
-        request.remote_addr,
-        list(request.access_route),
-        request.headers.get("X-Forwarded-For"),
-        request.referrer,
-    )
     rq_queue.enqueue(
         process_click_event,
         url.id,
         datetime.now(timezone.utc),
         request.remote_addr,
         request.headers.get("User-Agent"),
-        request.referrer
+        request.referrer,
     )
 
     return redirect(url.original_url)
 
 
 def encode_base62(number):
-    characters = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    characters = (
+        "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    )
     result = ""
 
     while number > 0:
@@ -492,6 +473,3 @@ def encode_base62(number):
         result = characters[remainder] + result
 
     return result
-
-
-# 1. Hot short codes
