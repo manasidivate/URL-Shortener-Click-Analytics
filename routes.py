@@ -3,6 +3,7 @@ from io import BytesIO
 import qrcode
 from flask import (
     Blueprint,
+    current_app,
     request,
     redirect,
     render_template,
@@ -391,6 +392,14 @@ def redirect_url(short_url):
                             "expired.html"
                         ), 410
 
+                current_app.logger.info(
+                    "Click request diagnostics: remote_addr=%r access_route=%r "
+                    "x_forwarded_for=%r referrer=%r",
+                    request.remote_addr,
+                    list(request.access_route),
+                    request.headers.get("X-Forwarded-For"),
+                    request.referrer,
+                )
                 rq_queue.enqueue(
                     process_click_event,
                     cached_url_id,
@@ -452,6 +461,14 @@ def redirect_url(short_url):
         json.dumps(cached_data)
     )
 
+    current_app.logger.info(
+        "Click request diagnostics: remote_addr=%r access_route=%r "
+        "x_forwarded_for=%r referrer=%r",
+        request.remote_addr,
+        list(request.access_route),
+        request.headers.get("X-Forwarded-For"),
+        request.referrer,
+    )
     rq_queue.enqueue(
         process_click_event,
         url.id,
