@@ -713,6 +713,13 @@ input[type="datetime-local"]:focus {
     font-size: 14px;
 }
 
+.empty-state-description {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
+    margin-top: 2px;
+}
+
 
 /* ---------------------------------------------------------
    TABLET

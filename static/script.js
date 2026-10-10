@@ -65,9 +65,9 @@ function clearAnalyticsMessage() {
 function showAnalyticsSuccess() {
     clearAnalyticsMessage();
     setMessage(
-       analyticsMessage,
-       "Analytics refreshed successfully.",
-       "success"
+        analyticsMessage,
+        "Analytics refreshed successfully.",
+        "success"
     );
 
     analyticsMessageTimeout = setTimeout(() => {
@@ -575,10 +575,20 @@ function renderRanking(container, items, labelKey) {
         const emptyState = document.createElement("p");
         emptyState.className = "empty-state";
 
-        emptyState.textContent =
-            labelKey === "country"
-                ? "Country data is unavailable yet."
-                : "Referrer data is unavailable yet.";
+        if (labelKey === "country") {
+            emptyState.textContent = "Country data is unavailable yet.";
+        } else {
+            emptyState.textContent = "No referrer data available.";
+
+            const explanation = document.createElement("p");
+            explanation.className = "empty-state-description";
+            explanation.textContent =
+                "The source of a visit cannot be identified when referrer information isn't provided.";
+
+            container.appendChild(emptyState);
+            container.appendChild(explanation);
+            return;
+        }
 
         container.appendChild(emptyState);
         return;
