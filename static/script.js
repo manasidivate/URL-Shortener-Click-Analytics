@@ -64,7 +64,11 @@ function clearAnalyticsMessage() {
 
 function showAnalyticsSuccess() {
     clearAnalyticsMessage();
-    setMessage(analyticsMessage, "Analytics updated.", "success");
+    setMessage(
+       analyticsMessage,
+       "Analytics refreshed successfully.",
+       "success"
+    );
 
     analyticsMessageTimeout = setTimeout(() => {
         setMessage(analyticsMessage, "");
