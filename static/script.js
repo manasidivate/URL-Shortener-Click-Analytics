@@ -41,6 +41,7 @@ let currentLinkExpiresAt = null;
 let copyMessageTimeout = null;
 let analyticsMessageTimeout = null;
 let qrImageObjectUrl = null;
+let expiryMessageTimeout = null;
 
 
 /* ---------------------------------------------------------
@@ -155,6 +156,8 @@ function updateLinkStatusUI(isActive) {
     linkStatus.textContent = isActive
         ? "Active"
         : "Deactivated";
+
+    linkStatus.classList.toggle("link-status-deactivated", !isActive);
 
     toggleLinkButton.textContent = isActive
         ? "Deactivate"
@@ -478,6 +481,23 @@ async function shortenUrl(event) {
         currentLinkExpiresAt = expiresAt
             ? new Date(expiresAt)
             : null;
+
+        clearTimeout(expiryMessageTimeout);
+expiryMessageTimeout = null;
+
+if (currentLinkExpiresAt) {
+    const timeUntilExpiry =
+        currentLinkExpiresAt.getTime() - Date.now();
+
+    if (timeUntilExpiry > 0) {
+        expiryMessageTimeout = setTimeout(
+            updateAvailabilityMessage,
+            timeUntilExpiry
+        );
+    } else {
+        updateAvailabilityMessage();
+    }
+}
 
         showSuccess(currentShortCode);
 
