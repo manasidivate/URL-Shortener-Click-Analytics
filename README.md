@@ -1,364 +1,138 @@
 # URL Shortener + Click Analytics
 
-A backend-focused URL shortening and click analytics system built with **Flask, PostgreSQL, Redis, and Redis Queue (RQ)**.
+A backend-focused URL shortener built with **Flask, PostgreSQL, Redis, and Redis Queue (RQ)**. It combines cached redirects with asynchronous click-event processing and per-link analytics, with optional custom aliases, expiration, and link deactivation.
 
-Unlike a basic URL shortener, this project combines **fast cached redirection, asynchronous click-event processing, analytics aggregation, custom aliases, URL expiration, and link deactivation** into a single backend system.
+**Live demo:** [url-shortener-click-analytics.onrender.com](https://url-shortener-click-analytics.onrender.com/)  
+**Source code:** [GitHub repository](https://github.com/manasidivate/URL-Shortener-Click-Analytics)
 
 ## ✨ Features
 
-- **URL Shortening**
-  - Generate unique short URLs using **Base62 encoding**
-  - PostgreSQL sequence-based short-code generation
+- **URL shortening:** Generate unique Base62 short codes using a PostgreSQL sequence.
+- **URL redirection:** Use Redis caching for frequently accessed short URLs and HTTP `302 Found` redirects.
+- **Asynchronous click tracking:** Queue click events for background processing, including timestamp, IP-derived country, browser, device type, referrer, and a salted visitor hash.
+- **Click analytics:** View total clicks, unique visitors, top five countries, top five referrers, and clicks over the last seven days.
+- **Custom aliases:** Create user-defined short URLs with validation and collision detection.
+- **URL expiration:** Set optional expiration timestamps; expired links return `410 Gone`.
+- **Link deactivation:** Deactivate and reactivate links without deleting their records; deactivated links return `403 Forbidden`.
+- **QR codes:** Generate a PNG QR code for an active short URL through `GET /<short_url>/qr`.
 
-- **Fast URL Redirection**
-  - Redis-based caching for frequently accessed short URLs
-  - Cache hit/miss handling
-  - HTTP `302 Found` redirection
-
-- **Asynchronous Click Tracking**
-  - Process click events using **Redis Queue (RQ)**
-  - Background worker-based processing
-  - Capture timestamp, IP-derived country, browser, device type, referrer, and visitor hash
-
-- **Click Analytics**
-  - Total clicks
-  - Unique visitors
-  - Top 5 countries
-  - Top 5 referrers
-  - Clicks over the last 7 days
-
-- **Custom Aliases**
-  - User-defined short URLs
-  - Alias validation
-  - Reserved-alias protection
-  - Collision detection
-
-- **URL Expiration**
-  - Optional expiration timestamps
-  - Expired links return `410 Gone`
-  - Expired cache entries are invalidated
-
-- **Link Deactivation**
-  - Deactivate links without deleting their database records
-  - Deactivated links return `403 Forbidden`
-  - Cache invalidation on status changes
-  - Link reactivation support
+Country analytics depend on successful IP geolocation. Referrer analytics are available only when the incoming request includes a `Referer` header.
 
 ## 🏗️ Architecture
 
 ```text
-                         +----------------+
-                         |     Client     |
-                         +-------+--------+
-                                 |
-                                 v
-                         +-------+--------+
-                         | Flask Backend  |
-                         +---+---------+--+
-                             |         |
-                      Cache  |         | Click Event
-                             |         |
-                             v         v
-                        +----+----+  +--+------+
-                        |  Redis  |  | RQ Queue|
-                        +----+----+  +----+----+
-                             |            |
-                       Cache Miss          v
-                             |        +---+------+
-                             v        | RQ Worker|
-                       +-----+-----+  +---+------+
-                       | PostgreSQL|      |
-                       +-----------+<-----+
+                          Client
+                            |
+                            v
+                     Flask application
+                       /           \
+                      v             v
+                Redis cache     Redis / RQ queue
+                      |                |
+                 Cache miss            v
+                      |             RQ worker
+                      v                |
+                  PostgreSQL <---------+
+              (URLs and click events)
 ```
 
-### Main Components
+- **Flask** handles the web interface, URL creation, redirects, and analytics endpoints.
+- **PostgreSQL** stores URL records and processed click events.
+- **Redis** supports hot-URL caching and the RQ queue backend.
+- **RQ worker** processes click-event jobs asynchronously.
+- **GeoLite2** provides IP-based country lookup; `user-agents` parses browser and device information.
 
-| Component | Responsibility |
-|---|---|
-| **Flask** | Handles HTTP requests and application logic |
-| **PostgreSQL** | Persistent storage for URLs and click events |
-| **Redis** | URL caching and RQ queue backend |
-| **RQ** | Asynchronous task queue |
-| **RQ Worker** | Processes click-event jobs |
-| **GeoLite2** | IP-based country detection |
-| **user-agents** | Browser and device detection |
-| **HTML/CSS/JavaScript** | Project frontend |
+## How Redirects Work
 
-## 🔄 How It Works
+1. The application checks Redis for the short code.
+2. On a cache miss, it retrieves the URL record from PostgreSQL.
+3. It checks whether the link is active and has not expired.
+4. A valid link receives a `302 Found` redirect, and a click-event job is queued for background processing.
 
-### URL Shortening
-
-```text
-Client
-  |
-  | POST /shorten
-  v
-Flask
-  |
-  | Generate Base62 short code
-  v
-PostgreSQL
-  |
-  v
-Short URL returned
-```
-
-The application generates a unique identifier using a PostgreSQL sequence and converts it into a Base62 short code.
-
-Custom aliases can also be supplied and are validated for uniqueness, format, and reserved-name conflicts.
-
-### URL Redirection
-
-```text
-Client
-   |
-   | GET /<short_url>
-   v
-Flask
-   |
-   v
-Redis Cache
-   |
-   +---- HIT ----> Check URL state ----> 302 Redirect
-   |
-   +---- MISS ---> PostgreSQL
-                       |
-                       v
-                  Check URL state
-                       |
-                       v
-                  Cache valid URL
-                       |
-                       v
-                    302 Redirect
-```
-
-The redirect path checks Redis before PostgreSQL so that frequently accessed URLs can be served without a database lookup.
-
-URL state is checked before redirecting:
-
-| URL State | Response |
+| Link state | Response |
 |---|---|
 | Active and not expired | `302 Found` |
-| Active but expired | `410 Gone` |
+| Expired | `410 Gone` |
 | Deactivated | `403 Forbidden` |
-| Unknown short URL | `404 Not Found` |
+| Unknown short code | `404 Not Found` |
 
-### Asynchronous Click Processing
-
-A successful redirect triggers an asynchronous click-event job.
-
-```text
-Successful Redirect
-        |
-        v
-    RQ Queue
-        |
-        v
-    RQ Worker
-        |
-        v
-Click Event Processing
-        |
-        +---- Country
-        +---- Browser
-        +---- Device
-        +---- Referrer
-        +---- Visitor Hash
-        |
-        v
-    PostgreSQL
-```
-
-The redirect request does not wait for the complete click-event processing operation, keeping analytics processing separate from the latency-sensitive redirect path.
-
-## 📊 Analytics
-
-The analytics endpoint provides information for an individual short URL:
-
-- **Total clicks**
-- **Unique visitors**
-- **Top 5 countries**
-- **Top 5 referrers**
-- **Clicks over the last 7 days**
-
-The backend click-event pipeline also captures **browser and device type** for each click.
-
-The current analytics interface exposes selected aggregated views, while the underlying click-event records retain the captured event attributes for further analysis.
-
-Country information depends on successful IP geolocation, while referrer information depends on the request containing a referrer.
-
-The seven-day timeline is generated using UTC dates and includes zero-value days where no clicks occurred.
-
-Visitor identification uses a salted hash rather than storing the raw visitor identifier for this purpose.
+Click-event processing runs separately from the redirect path, so the redirect request does not wait for the worker to finish recording analytics.
 
 ## 🔌 API Endpoints
 
-| Method | Endpoint | Description |
+| Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/` | Serve the project interface |
-| `POST` | `/shorten` | Create a shortened URL |
-| `GET` | `/<short_url>` | Redirect to the original URL |
-| `GET` | `/<short_url>/analytics` | Retrieve analytics |
+| `GET` | `/` | Serve the web interface |
+| `POST` | `/shorten` | Create a short URL |
+| `GET` | `/<short_url>` | Redirect or return the appropriate link-state response |
+| `GET` | `/<short_url>/analytics` | Retrieve analytics for a short URL |
 | `PATCH` | `/<short_url>` | Activate or deactivate a short URL |
-
-### `POST /shorten`
-
-Creates a shortened URL with:
-
-- Original URL
-- Optional custom alias
-- Optional expiration timestamp
-
-### `GET /<short_url>`
-
-Redirects to the original URL when the short URL is valid.
-
-Possible responses:
-
-- `302 Found`
-- `403 Forbidden`
-- `404 Not Found`
-- `410 Gone`
-
-### `GET /<short_url>/analytics`
-
-Returns click and visitor analytics for the requested short URL.
-
-### `PATCH /<short_url>`
-
-Updates the activation state of a short URL and invalidates its Redis cache entry.
-
-Example:
-
-```json
-{
-  "is_active": false
-}
-```
-
-## 🗄️ Data Model
-
-### URL
-
-```text
-URL
-├── id
-├── original_url
-├── short_url
-├── expires_at
-└── is_active
-```
-
-### ClickEvent
-
-```text
-ClickEvent
-├── id
-├── url_id
-├── timestamp
-├── country
-├── browser
-├── device_type
-├── referrer
-└── visitor_hash
-```
+| `GET` | `/<short_url>/qr` | Return a PNG QR code for an active short URL |
 
 ## 🛠️ Tech Stack
 
 - **Language:** Python
 - **Backend:** Flask
-- **Database:** PostgreSQL
-- **ORM:** Flask-SQLAlchemy / SQLAlchemy
-- **Caching:** Redis
-- **Background Processing:** Redis Queue (RQ)
-- **Geolocation:** GeoLite2 Country Database
-- **User-Agent Parsing:** user-agents
+- **Database / ORM:** PostgreSQL, Flask-SQLAlchemy, SQLAlchemy
+- **Caching and queue backend:** Redis
+- **Background jobs:** Redis Queue (RQ)
+- **Geolocation:** MaxMind GeoLite2 Country database
+- **User-agent parsing:** `user-agents`
 - **Frontend:** HTML, CSS, JavaScript
-- **Version Control:** Git & GitHub
+- **Deployment:** Render, Gunicorn, Supervisor
+- **Testing:** Python `unittest`
 
 ## 🧪 Testing
 
-The project includes automated tests covering the implemented functionality and important edge cases, including:
+The project includes automated tests covering core functionality, link lifecycle behavior, caching, click tracking, analytics, QR generation, and deployment configuration.
 
-- URL shortening
-- Base62 generation
-- Custom aliases and collision detection
-- Redirect behavior
-- Redis caching
-- Asynchronous click-event enqueueing
-- Click analytics
-- Unique visitors
-- Seven-day analytics timeline
-- URL expiration
-- Expired-cache handling
-- Link deactivation
-- Link reactivation
-- Cache invalidation
-- Input validation
+Run the test suite from the project root:
 
-Test files:
-
-```text
-tests/
-├── test_shortening.py
-├── test_analytics.py
-├── test_expiration.py
-└── test_deactivation.py
+```bash
+python -m unittest discover -s tests -v
 ```
 
-## ⚡ Redirect Performance
+## 📊 Redirect Performance Benchmark
 
-A dedicated benchmark is included for the Redis hot-cache redirect path:
+A local benchmark at `benchmarks/benchmark_redirect.py` measures hot-cache redirect latency, including P95 latency, against the project's **50 ms target**.
 
-```text
-benchmarks/
-└── benchmark_redirect.py
+Run the Flask application with its required services and a valid `/info` short code, then execute:
+
+```bash
+python benchmarks/benchmark_redirect.py
 ```
 
-The benchmark measures the local hot-cache redirect path using P95 latency and evaluates it against the project's **50 ms redirect target**.
+This measures local performance; it does not guarantee the same latency under production traffic or deployment conditions.
 
-The benchmark represents local performance validation and does not claim a guaranteed production latency under arbitrary deployment conditions or traffic levels.
+## 🚀 Deployment
 
-## 📁 Project Structure
+The application is deployed on **Render** using the configuration in `render.yaml`.
 
-```text
-URL Shortener + Click Analytics/
-│
-├── benchmarks/
-│   └── benchmark_redirect.py
-│
-├── data/
-│   └── GeoLite2-Country.mmdb
-│
-├── static/
-│   ├── script.js
-│   └── style.css
-│
-├── templates/
-│   ├── deactivated.html
-│   ├── expired.html
-│   └── index.html
-│
-├── tests/
-│   ├── test_analytics.py
-│   ├── test_deactivation.py
-│   ├── test_expiration.py
-│   └── test_shortening.py
-│
-├── .gitignore
-├── app.py
-├── extensions.py
-├── init_db.py
-├── models.py
-├── requirements.txt
-├── routes.py
-├── tasks.py
-├── worker.py
-└── README.md
+- **Gunicorn** serves the Flask application.
+- **Supervisor** manages Gunicorn and the RQ worker as separate processes within the web service.
+- **Render PostgreSQL** stores URL and click-event records.
+- **Render Key Value (Redis)** supports caching and the RQ queue.
+- The GeoLite2 Country database is downloaded during the build using MaxMind credentials; the database file is not committed to the repository.
+- Runtime configuration is supplied through environment variables.
+
+The application currently uses free-tier services, which have resource and lifecycle limitations. Service restarts or Redis data loss may interrupt queued background work. High availability and stronger recovery guarantees are planned future improvements.
+
+## ⚙️ Configuration
+
+For local development, create a `.env` file with the required configuration:
+
+```env
+DATABASE_URL=<your-postgresql-database-url>
+REDIS_URL=redis://localhost:6379/0
+VISITOR_HASH_SALT=<your-random-secret-salt>
+GEOLITE2_DATABASE_PATH=data/GeoLite2-Country.mmdb
 ```
 
-## 🚀 Running Locally
+For IP-derived country analytics, obtain the GeoLite2 Country database and place it at the configured path. For deployment, set `MAXMIND_ACCOUNT_ID` and `MAXMIND_LICENSE_KEY` in the hosting environment so the build script can download the database.
+
+Never commit real credentials, `.env` files, or the GeoLite2 database to version control.
+
+## 💻 Run Locally
 
 ### 1. Clone the repository
 
@@ -367,19 +141,19 @@ git clone https://github.com/manasidivate/URL-Shortener-Click-Analytics.git
 cd URL-Shortener-Click-Analytics
 ```
 
-### 2. Create a virtual environment
+### 2. Create and activate a virtual environment
 
 ```bash
 python -m venv venv
 ```
 
-#### Windows
+**Windows (PowerShell):**
 
-```bash
-venv\Scripts\activate
+```powershell
+.\venv\Scripts\Activate.ps1
 ```
 
-#### macOS / Linux
+**macOS / Linux:**
 
 ```bash
 source venv/bin/activate
@@ -391,66 +165,80 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Configure environment variables
+### 4. Configure services
 
-Create a `.env` file containing:
+Create the `.env` file described above. Make sure PostgreSQL and Redis are running and that the GeoLite2 database is available at `GEOLITE2_DATABASE_PATH`.
 
-```env
-DATABASE_URL=<your-postgresql-database-url>
-VISITOR_HASH_SALT=<your-secret-salt>
-```
-
-Do not commit real credentials or secret values to version control.
-
-### 5. Configure GeoLite2
-
-Place the GeoLite2 Country database at:
-
-```text
-data/GeoLite2-Country.mmdb
-```
-
-The database is required for IP-based country detection and is excluded from version control.
-
-### 6. Start Redis
-
-Redis is used for both URL caching and RQ background task processing.
-
-For a local Docker-based Redis instance:
+To start a local Redis instance with Docker:
 
 ```bash
-docker run -d --name redis -p 6379:6379 redis
+docker run -d --name url-shortener-redis -p 6379:6379 redis
 ```
 
-### 7. Initialize the database
+### 5. Initialize the database
 
 ```bash
 python init_db.py
 ```
 
-### 8. Start the Flask application
+### 6. Start the application and worker
+
+In one terminal:
 
 ```bash
 python app.py
 ```
 
-### 9. Start the RQ worker
-
-In a separate terminal:
+In a second terminal, using the same virtual environment and environment variables:
 
 ```bash
 python worker.py
 ```
 
-The Flask application handles HTTP requests while the RQ worker processes click-event jobs asynchronously.
+The Flask application handles HTTP requests while the RQ worker processes click-event jobs.
 
-## 📌 Project Status
+## 📁 Project Structure
 
-| Area | Status |
-|---|---|
-| Core functional implementation | ✅ Complete |
-| Redirect performance and local validation | ✅ Complete |
-| Production-readiness improvements | 🚧 In progress |
-| Deployment | ⏳ Not yet deployed |
+```text
+URL Shortener + Click Analytics/
+├── benchmarks/
+│   └── benchmark_redirect.py
+├── scripts/
+│   ├── download_geolite2.py
+│   ├── run_gunicorn.sh
+│   └── start_web.sh
+├── static/
+│   ├── script.js
+│   └── style.css
+├── templates/
+│   ├── deactivated.html
+│   ├── expired.html
+│   └── index.html
+├── tests/
+│   ├── test_analytics.py
+│   ├── test_click_tracking.py
+│   ├── test_deactivation.py
+│   ├── test_deployment_config.py
+│   ├── test_expiration.py
+│   ├── test_qr.py
+│   └── test_shortening.py
+├── app.py
+├── extensions.py
+├── init_db.py
+├── models.py
+├── render.yaml
+├── requirements.txt
+├── routes.py
+├── supervisord.conf
+├── tasks.py
+└── worker.py
+```
 
-The core system is complete, including URL shortening, cached redirection, asynchronous click tracking, analytics, custom aliases, URL expiration, and link deactivation. The project is currently undergoing production-readiness improvements before deployment.
+## 🔭 Future Improvements
+
+- **High availability:** Introduce independent service instances, health checks, and automated recovery.
+- **Scalability:** Explore horizontal scaling and load balancing to support higher traffic.
+- **Durability and resilience:** Improve queue persistence and recovery strategies to reduce the risk of losing queued work.
+- **Security hardening:** Extend existing security safeguards and strengthen configuration management.
+
+
