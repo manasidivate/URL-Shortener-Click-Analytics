@@ -7,6 +7,7 @@ const shortenButtonText = document.getElementById("shorten-button-text");
 const formMessage = document.getElementById("form-message");
 
 const successPanel = document.getElementById("success-panel");
+const successDescription = document.querySelector(".success-heading p");
 const shortUrlElement = document.getElementById("short-url");
 const copyButton = document.getElementById("copy-button");
 const openButton = document.getElementById("open-button");
@@ -36,6 +37,7 @@ const referrersList = document.getElementById("referrers-list");
 
 let currentShortCode = null;
 let currentLinkActive = true;
+let currentLinkExpiresAt = null;
 let copyMessageTimeout = null;
 let analyticsMessageTimeout = null;
 let qrImageObjectUrl = null;
@@ -130,6 +132,23 @@ function buildShortUrl(shortCode) {
    LINK MANAGEMENT
 --------------------------------------------------------- */
 
+function updateAvailabilityMessage() {
+    if (!currentLinkActive) {
+        successDescription.textContent =
+            "This short URL has been deactivated.";
+        return;
+    }
+
+    if (currentLinkExpiresAt && currentLinkExpiresAt <= new Date()) {
+        successDescription.textContent =
+            "This short URL has expired.";
+        return;
+    }
+
+    successDescription.textContent = "Your link is ready to use.";
+}
+
+
 function updateLinkStatusUI(isActive) {
     currentLinkActive = isActive;
 
@@ -140,6 +159,8 @@ function updateLinkStatusUI(isActive) {
     toggleLinkButton.textContent = isActive
         ? "Deactivate"
         : "Reactivate";
+
+    updateAvailabilityMessage();
 }
 
 
@@ -453,6 +474,10 @@ async function shortenUrl(event) {
 
         currentShortCode = data.short_url;
         currentLinkActive = true;
+
+        currentLinkExpiresAt = expiresAt
+            ? new Date(expiresAt)
+            : null;
 
         showSuccess(currentShortCode);
 
